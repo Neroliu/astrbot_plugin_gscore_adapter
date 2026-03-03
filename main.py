@@ -1,14 +1,12 @@
 import asyncio
 import base64
 import os
+import uuid
 from base64 import b64encode
 from pathlib import Path
 
 import aiofiles
 import websockets.client
-from msgspec import json as msgjson
-from websockets.exceptions import ConnectionClosed, ConnectionClosedError
-
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 from astrbot.api.star import Context, Star, register
@@ -20,11 +18,15 @@ from astrbot.core.message.components import (
     Node,
     Nodes,
     Plain,
+    Record,
     Reply,
+    Video,
 )
 from astrbot.core.platform.astr_message_event import MessageSesion
 from astrbot.core.platform.message_type import MessageType
 from astrbot.core.star.filter.event_message_type import EventMessageType
+from msgspec import json as msgjson
+from websockets.exceptions import ConnectionClosed, ConnectionClosedError
 
 from .models import Message as GsMessage
 from .models import MessageReceive, MessageSend
@@ -36,7 +38,7 @@ gsconnecting = False
     "astrbot_plugin_gscore_adapter",
     "KimigaiiWuyi",
     "用于链接SayuCore（早柚核心）的适配器！适用于多种游戏功能, 原神、星铁、绝区零、鸣朝、雀魂等游戏的最佳工具箱！",
-    "0.4.5",
+    "0.4.6",
 )
 class GsCoreAdapter(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -315,6 +317,17 @@ class GsCoreAdapter(Star):
                         message.append(
                             Image.fromBase64(_c.data),  # type: ignore
                         )
+                elif _c.type == "record":
+                    if _c.data.startswith("base64://"):
+                        d = _c.data[9:]
+                    else:
+                        d = _c.data
+                    message.append(Record.fromBase64(d))
+                elif _c.type == "video":
+                    file_name, file_content = f"{uuid.uuid4().hex}.mp4", _c.data
+                    path = Path(__file__).resolve().parent / file_name
+                    store_file(path, file_content)
+                    message.append(Video.fromFileSystem(str(path)))
                 elif _c.type == "node":
                     # 特殊处理 qq 平台
                     if bot_id == "onebot":
@@ -367,6 +380,8 @@ class GsCoreAdapter(Star):
 
 
 def store_file(path: Path, file: str):
+    if file.startswith("base64://"):
+        file = file[9:]
     file_content = base64.b64decode(file)
     with open(path, "wb") as f:
         f.write(file_content)
