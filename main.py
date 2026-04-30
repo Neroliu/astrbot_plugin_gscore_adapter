@@ -38,7 +38,7 @@ gsconnecting = False
     "astrbot_plugin_gscore_adapter",
     "KimigaiiWuyi",
     "用于链接SayuCore（早柚核心）的适配器！适用于多种游戏功能, 原神、星铁、绝区零、鸣朝、雀魂等游戏的最佳工具箱！",
-    "0.4.6",
+    "0.4.7",
 )
 class GsCoreAdapter(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -54,6 +54,7 @@ class GsCoreAdapter(Star):
             for prefix in getattr(self.config, "GSCORE_ONLY_PREFIXES", [])
             if isinstance(prefix, str) and prefix
         ]
+        self.MAX_RETRY_TIMES = getattr(self.config, "MAX_RETRY_TIMES", 30)
 
     def _is_gscore_only_message(self, event: AstrMessageEvent) -> bool:
         if not self.GSCORE_ONLY_PREFIXES:
@@ -313,14 +314,30 @@ class GsCoreAdapter(Star):
                 task.cancel()
             logger.warning(f"与[gsuid-core]断开连接! Bot_ID: {self.BOT_ID}")
             self.is_alive = False
-            for _ in range(30):
+            retry_count = 0
+            while True:
+                # 检查是否达到最大重试次数（-1表示无限重试）
+                if self.MAX_RETRY_TIMES != -1 and retry_count >= self.MAX_RETRY_TIMES:
+                    logger.error(
+                        f"[GsCore] 已达到最大重试次数 ({self.MAX_RETRY_TIMES})，停止重试连接"
+                    )
+                    break
+                
                 await asyncio.sleep(5)
                 try:
                     await self.async_connect()
                     await self.start()
                     break
                 except:  # noqa
-                    logger.debug("自动连接core服务器失败...五秒后重新连接...")
+                    retry_count += 1
+                    if self.MAX_RETRY_TIMES == -1:
+                        logger.debug(
+                            f"自动连接core服务器失败（第 {retry_count} 次尝试）...五秒后重新连接..."
+                        )
+                    else:
+                        logger.debug(
+                            f"自动连接core服务器失败（第 {retry_count}/{self.MAX_RETRY_TIMES} 次尝试）...五秒后重新连接..."
+                        )
 
     async def _to_msg(
         self, msg: list[GsMessage], bot_id: str
